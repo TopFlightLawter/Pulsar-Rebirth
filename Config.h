@@ -48,11 +48,10 @@ namespace Config {
   // ======================================================================================
   // NETWORK CONFIGURATION
   // ======================================================================================
+  // NOTE: Actual credentials are in Config_credentials.h (not in git)
+  // The declarations below will be overridden by Config_credentials.h
 
-  const char* PRIMARY_SSID = "YOUR_WIFI_SSID";
-  const char* PRIMARY_PASS = "YOUR_WIFI_PASSWORD";
-  const char* SECONDARY_SSID = "YOUR_BACKUP_SSID";
-  const char* SECONDARY_PASS = "YOUR_BACKUP_PASSWORD";
+  #include "Config_credentials.h"  // Contains actual WiFi credentials (gitignored)
   
   // ======================================================================================
   // TIME AND TIMEZONE CONFIGURATION

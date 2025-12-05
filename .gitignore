@@ -15,7 +15,7 @@ build/
 *~
 
 # Credentials (DO NOT COMMIT WIFI PASSWORDS)
-# Note: Config.h contains WiFi credentials - be careful!
+Config_credentials.h
 
 # Claude Code local settings
 .claude/settings.local.json
