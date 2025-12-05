@@ -23,6 +23,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **20-Second Snooze Hold → Killswitch**: Both snooze buttons (GPIO 18 & 32) now trigger full system shutdown when held for 20 seconds (replaces the less useful 5-minute extended snooze)
 - Maintains normal 60-second snooze on short press
 
+**Smart Relay Control:**
+- **Context-Aware Snooze Behavior**: Snooze button now intelligently controls relay based on alarm window - relay stays ON during scheduled hours (9:25 PM - 11:30 PM), turns OFF outside window
+- **Triple-Press Manual Toggle**: Press snooze 3x within 2 seconds (outside alarm window) to toggle relay manual mode - perfect for bedside lamp control
+- **HTTP API Endpoint**: `/api/relay?action=on|off|toggle|status` for external control via iOS Shortcuts, automation, or web requests
+- **Web Interface Lightswitch**: Command Center now includes visual lamp toggle button with real-time status updates
+- **Safety Features**: Manual relay mode auto-disabled during alarm window, when alarms trigger, or via killswitch
+
 **Bug Fixes:**
 - **Relay Flashing Fix**: Relay now properly flashes throughout entire PWM Warning stage (previously only flashed once then stayed off)
 
@@ -165,14 +172,32 @@ During PWM warning, any critical button (snooze/kill) triggers instant motor shu
 
 #### 6. Relay Control Strategy
 
-Relay behavior maps to alarm stages:
+**Alarm Stage Behavior:**
 - **PWM_WARNING**: Flashing at rtConfig.warningFlashInterval (50-1000ms)
 - **PAUSE**: Solid OFF
 - **PROGRESSIVE_PATTERN**: Flashing at rtConfig.alarmFlashInterval (50-1000ms)
-- **SNOOZE Active**: Solid ON
+- **SNOOZE Active (v5.4+)**: Context-aware based on alarm window
+  - **Inside alarm window** (9:25 PM - 11:30 PM): Solid ON
+  - **Outside alarm window**: OFF
 - **Alarm Disabled**: OFF
 
-Relay state updates automatically via `transitionAlarmStage()` in AlarmLogic.ino.
+**Manual Relay Toggle (v5.4+):**
+- **Triple-Press Snooze**: Press snooze button 3x within 2 seconds (outside alarm window) to toggle manual mode
+- **Manual Mode ON**: Relay stays ON until toggled off, killswitch pressed, or snooze held 20s
+- **Manual Mode OFF**: Triple-press again to turn off
+- **Safety**: Auto-disabled when alarm triggers or inside alarm window
+
+**HTTP API Endpoint (v5.4+):**
+- **Base URL**: `http://pulsar.local/api/relay`
+- **Actions**: `?action=on` | `?action=off` | `?action=toggle` | `?action=status`
+- **Use Cases**: iOS Shortcuts, home automation, web control
+- **Response Format**: JSON with success status, relay state, manual mode flag
+- **Security**: API blocked during alarm window (403 Forbidden)
+
+**State Tracking:**
+- `sysState.relay.manualMode` - Boolean flag for manual toggle state
+- `sysState.triplePress` - Circular buffer tracking last 3 snooze presses
+- Relay state updates automatically via `transitionAlarmStage()` in AlarmLogic.ino
 
 #### 7. Persistence & Flash Storage
 
@@ -401,6 +426,54 @@ Set to `false` to reduce Serial noise in production.
 **Factory Reset:**
 1. Hold Kill Switch button for 2+ seconds
 2. System clears preferences, resets rtConfig to defaults, restarts
+
+**Manual Relay Control (v5.4+):**
+
+*Physical Triple-Press:*
+1. Outside alarm window, press snooze button 3 times within 2 seconds
+2. Relay toggles ON/OFF in manual mode
+3. Repeat triple-press to toggle state
+
+*HTTP API Control:*
+```bash
+# Turn lamp ON
+curl "http://pulsar.local/api/relay?action=on"
+
+# Turn lamp OFF
+curl "http://pulsar.local/api/relay?action=off"
+
+# Toggle lamp state
+curl "http://pulsar.local/api/relay?action=toggle"
+
+# Check current status
+curl "http://pulsar.local/api/relay?action=status"
+```
+
+*Web Interface:*
+1. Open `http://pulsar.local` in browser
+2. Click "💡 LAMP OFF/ON" button in left panel
+3. Button shows current state and glows yellow when ON
+
+**iOS Shortcut Setup (v5.4+):**
+
+*Simple Toggle Shortcut:*
+1. Open Shortcuts app on iPhone
+2. Create new shortcut with "Get Contents of URL" action
+3. Set URL: `http://pulsar.local/api/relay?action=toggle`
+4. Set Method: GET
+5. Name it "Lamp Toggle" with lightbulb icon
+6. Add to Home Screen for instant access
+7. Optional: Add to Siri ("Hey Siri, Lamp Toggle")
+
+*Separate ON/OFF Shortcuts:*
+- **Lamp ON**: URL = `http://pulsar.local/api/relay?action=on`
+- **Lamp OFF**: URL = `http://pulsar.local/api/relay?action=off`
+
+*Smart Status-Aware Toggle:*
+1. Get status: `http://pulsar.local/api/relay?action=status`
+2. Parse JSON response → get `relayState` value
+3. If `true`: call `?action=off` + show "Lamp OFF" notification
+4. If `false`: call `?action=on` + show "Lamp ON" notification
 
 **OTA Update:**
 1. Ensure WiFi connected

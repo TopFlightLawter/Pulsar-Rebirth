@@ -37,6 +37,7 @@ void setupWebServer() {
   server.on("/alarmsStatus", HTTP_GET, handleAlarmsStatus);
   server.on("/telemetry", HTTP_GET, handleTelemetry);
   server.on("/systemHealth", HTTP_GET, handleSystemHealth);
+  server.on("/api/relay", HTTP_GET, handleRelayControl);
 
   server.on("*", HTTP_OPTIONS, []() {
     sendCORSResponse(204, "", "");
@@ -274,6 +275,70 @@ void handleSystemHealth() {
   json += "\"websocketClients\": " + String(sysState.websocket.connectedClients);
   json += " }";
   sendCORSResponse(200, "application/json", json);
+}
+
+/**
+ * Handle relay manual control API endpoint
+ * Supports query parameters: ?action=on, ?action=off, ?action=toggle, ?action=status
+ * Only works outside alarm window (safety feature)
+ */
+void handleRelayControl() {
+  // Check if we're in alarm window - manual relay control disabled during alarm hours
+  if (isInAlarmWindow()) {
+    String json = "{ \"success\": false, \"error\": \"Relay manual control disabled during alarm window\", ";
+    json += "\"manualMode\": false, \"relayState\": false }";
+    sendCORSResponse(403, "application/json", json);
+    Serial.println("🚫 API: Relay control blocked (in alarm window)");
+    return;
+  }
+
+  if (server.hasArg("action")) {
+    String action = server.arg("action");
+
+    if (action == "on") {
+      // Turn relay ON via manual mode
+      if (!sysState.relay.manualMode) {
+        toggleRelayManualMode();
+      }
+      String json = "{ \"success\": true, \"action\": \"on\", \"manualMode\": true, \"relayState\": true }";
+      sendCORSResponse(200, "application/json", json);
+      Serial.println("💡 API: Relay turned ON");
+
+    } else if (action == "off") {
+      // Turn relay OFF
+      if (sysState.relay.manualMode) {
+        toggleRelayManualMode();
+      }
+      String json = "{ \"success\": true, \"action\": \"off\", \"manualMode\": false, \"relayState\": false }";
+      sendCORSResponse(200, "application/json", json);
+      Serial.println("🔌 API: Relay turned OFF");
+
+    } else if (action == "toggle") {
+      // Toggle relay state
+      toggleRelayManualMode();
+      bool isOn = sysState.relay.manualMode;
+      String json = "{ \"success\": true, \"action\": \"toggle\", \"manualMode\": " + String(isOn ? "true" : "false");
+      json += ", \"relayState\": " + String(isOn ? "true" : "false") + " }";
+      sendCORSResponse(200, "application/json", json);
+      Serial.print("🔄 API: Relay toggled to ");
+      Serial.println(isOn ? "ON" : "OFF");
+
+    } else if (action == "status") {
+      // Get current relay status
+      bool isOn = sysState.relay.manualMode && sysState.relay.active;
+      String json = "{ \"success\": true, \"manualMode\": " + String(sysState.relay.manualMode ? "true" : "false");
+      json += ", \"relayState\": " + String(isOn ? "true" : "false");
+      json += ", \"inAlarmWindow\": false }";
+      sendCORSResponse(200, "application/json", json);
+
+    } else {
+      String json = "{ \"success\": false, \"error\": \"Invalid action. Use: on, off, toggle, or status\" }";
+      sendCORSResponse(400, "application/json", json);
+    }
+  } else {
+    String json = "{ \"success\": false, \"error\": \"No action provided. Use: ?action=on|off|toggle|status\" }";
+    sendCORSResponse(400, "application/json", json);
+  }
 }
 
 /**
@@ -556,7 +621,19 @@ void handleCommandCenter() {
             background: #ff0066;
             color: #fff;
         }
-        
+
+        .btn-lightswitch {
+            background: #252525;
+            color: #ffff00;
+            border: 2px solid #ffff00;
+        }
+
+        .btn-lightswitch.on {
+            background: #ffff00;
+            color: #000;
+            box-shadow: 0 0 20px rgba(255, 255, 0, 0.6);
+        }
+
         .btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 4px 15px rgba(0, 212, 255, 0.5);
@@ -822,6 +899,9 @@ void handleCommandCenter() {
                 
                 <!-- ACTION BUTTONS -->
                 <button class="btn btn-save" onclick="saveToDevice()">SAVE TO DEVICE</button>
+                <button class="btn btn-lightswitch" id="lightswitchBtn" onclick="toggleLightswitch()">
+                    💡 LAMP OFF
+                </button>
                 <button class="btn btn-test" onclick="testPattern('pwmWarning')">TEST PWM WARNING</button>
                 <button class="btn btn-test" onclick="testPattern('progressive')">TEST PROGRESSIVE</button>
                 <button class="btn btn-emergency" onclick="emergencyStop()">EMERGENCY STOP</button>
@@ -1199,7 +1279,42 @@ void handleCommandCenter() {
         function emergencyStop() {
             ws.send(JSON.stringify({ type: 'stopAll' }));
         }
-        
+
+        function toggleLightswitch() {
+            fetch('/api/relay?action=toggle')
+                .then(response => response.json())
+                .then(data => {
+                    updateLightswitchButton(data.relayState);
+                })
+                .catch(error => {
+                    console.error('Error toggling relay:', error);
+                });
+        }
+
+        function updateLightswitchButton(isOn) {
+            const btn = document.getElementById('lightswitchBtn');
+            if (isOn) {
+                btn.classList.add('on');
+                btn.textContent = '💡 LAMP ON';
+            } else {
+                btn.classList.remove('on');
+                btn.textContent = '💡 LAMP OFF';
+            }
+        }
+
+        function checkRelayStatus() {
+            fetch('/api/relay?action=status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateLightswitchButton(data.relayState);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking relay status:', error);
+                });
+        }
+
         function updatePwmStepCount() {
             const text = document.getElementById('pwmStepsArray').value;
             const values = parseArrayInput(text);
@@ -1255,7 +1370,9 @@ void handleCommandCenter() {
         
         connectWebSocket();
         updateClock();
+        checkRelayStatus();
         setInterval(updateClock, 1000);
+        setInterval(checkRelayStatus, 5000);  // Check relay status every 5 seconds
     </script>
 </body>
 </html>

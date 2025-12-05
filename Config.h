@@ -163,7 +163,7 @@ struct RuntimeConfig {
   
   // === PWM WARNING STEPS ARRAY - YOUR CUSTOM PATTERN ===
   int pwmStepsArray[Config::MAX_PWM_STEPS] = {
-    0, 5, 7, 0, 5, 6, 0, 5, 7, 0, 5, 6, 0, 5, 7, 0, 5, 6, 0, 5, 5, 7, 5, 7, 5, 7, 0, 9, 0, 9, 0,
+    0, 7, 6, 6, 6, 6, 6, 5, 5, 5, 5, 5, 0, 7, 6, 6, 6, 6, 6, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 7, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0  // Padding to MAX_PWM_STEPS
   };
   int pwmStepsArrayLength = 31;
@@ -174,15 +174,15 @@ struct RuntimeConfig {
   int mainMaxIntensity = 100;
   int mainFiresPerIntensity = 2;
   
-  // === MOTOR PATTERN (v4.0+) - YOUR CUSTOM TIMING ===
+  // === MOTOR PATTERN ===
   int motorPattern[Config::MAX_MOTOR_PATTERN] = {
-    100, 300, 87, 550, 150, 300, 175, 800, 150, 200, 100, 1000, 100, 150, 100, 190, 80,
+    100, 900, 87, 750, 150, 800, 105, 700, 130, 400, 100, 800, 100, 650, 100, 790, 80,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // Padding
   };
   int motorPatternLength = 17;
-  int motor2OffsetMs = 17;
+  int motor2OffsetMs = 23;
   
-  // === ALARM WINDOW - YOUR CUSTOM SCHEDULE ===
+  // === ALARM WINDOW ===
   int alarmStartHour = 21;
   int alarmStartMinute = 25;
   int alarmEndHour = 23;
@@ -194,8 +194,8 @@ struct RuntimeConfig {
   unsigned long snoozeDuration = 60000;
   
   // === RELAY FLASH TIMING ===
-  unsigned long warningFlashInterval = 250;  // PWM Warning stage flash speed (50-1000ms)
-  unsigned long alarmFlashInterval = 250;     // Progressive Pattern stage flash speed (50-1000ms)
+  unsigned long warningFlashInterval = 750;  // PWM Warning stage flash speed (50-1000ms)
+  unsigned long alarmFlashInterval = 150;     // Progressive Pattern stage flash speed (50-1000ms)
   
   // Helper to calculate step duration
   unsigned long getPwmStepDuration() const {
@@ -230,6 +230,7 @@ struct SystemState {
     unsigned long snoozeStartTime = 0;
     AlarmStage stage = AlarmStage::INACTIVE;
     unsigned long stageStartTime = 0;
+    bool isTestAlarm = false;  // Track if current alarm is test vs scheduled
   } alarm;
   
   // === MOTOR STATE ===
@@ -325,7 +326,14 @@ struct SystemState {
     bool currentState = false;
     unsigned long lastToggleTime = 0;
     unsigned long currentFlashInterval = 250;  // Active interval (copied from rtConfig)
+    bool manualMode = false;  // Manual relay toggle mode (outside alarm window)
   } relay;
+
+  // === TRIPLE PRESS DETECTION (for manual relay toggle) ===
+  struct {
+    unsigned long pressTimes[3] = {0, 0, 0};  // Stores last 3 press timestamps
+    int pressIndex = 0;  // Current position in circular buffer
+  } triplePress;
 };
 
 // ======================================================================================

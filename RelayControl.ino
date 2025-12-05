@@ -90,22 +90,27 @@ void turnOffRelay() {
  * Uses currentFlashInterval set by startRelayFlashing()
  */
 void updateRelayFlashing() {
+  // Don't interfere with manual mode
+  if (sysState.relay.manualMode) {
+    return;
+  }
+
   // Only process if relay is active and in flashing mode
   if (!sysState.relay.active || !sysState.relay.flashing) {
     return;
   }
-  
+
   unsigned long currentTime = millis();
-  
+
   // Check if it's time to toggle
   if (currentTime - sysState.relay.lastToggleTime >= sysState.relay.currentFlashInterval) {
     // Toggle state
     sysState.relay.currentState = !sysState.relay.currentState;
     sysState.relay.lastToggleTime = currentTime;
-    
+
     // Update physical output
     digitalWrite(Config::RELAY_PIN, sysState.relay.currentState ? HIGH : LOW);
-    
+
     if (Config::ENABLE_MOTOR_DEBUG) {
       Serial.print("⚡ RELAY: ");
       Serial.println(sysState.relay.currentState ? "ON" : "OFF");
@@ -121,7 +126,58 @@ String getRelayStatus() {
     return "OFF";
   } else if (sysState.relay.flashing) {
     return "FLASHING";
+  } else if (sysState.relay.manualMode) {
+    return "MANUAL ON";
   } else {
     return "SOLID ON";
+  }
+}
+
+/**
+ * Toggle relay manual mode (triple-press snooze button outside alarm window)
+ * Manual mode turns relay ON until turned off by:
+ *   1. Triple-press again
+ *   2. Killswitch press
+ *   3. 20-second snooze hold
+ */
+void toggleRelayManualMode() {
+  sysState.relay.manualMode = !sysState.relay.manualMode;
+
+  if (sysState.relay.manualMode) {
+    // Turn relay ON in manual mode
+    sysState.relay.active = true;
+    sysState.relay.flashing = false;
+    sysState.relay.currentState = true;
+    digitalWrite(Config::RELAY_PIN, HIGH);
+
+    Serial.println("🔘 RELAY MANUAL MODE: ON");
+    Serial.println("   Relay will stay ON until:");
+    Serial.println("   1. Triple-press snooze again");
+    Serial.println("   2. Killswitch pressed");
+    Serial.println("   3. Snooze held for 20 seconds");
+  } else {
+    // Turn relay OFF - exit manual mode
+    sysState.relay.active = false;
+    sysState.relay.flashing = false;
+    sysState.relay.currentState = false;
+    digitalWrite(Config::RELAY_PIN, LOW);
+
+    Serial.println("🔘 RELAY MANUAL MODE: OFF");
+  }
+}
+
+/**
+ * Disable relay manual mode (called by killswitch)
+ * Turns off relay and exits manual mode without toggling
+ */
+void disableRelayManualMode() {
+  if (sysState.relay.manualMode) {
+    sysState.relay.manualMode = false;
+    sysState.relay.active = false;
+    sysState.relay.flashing = false;
+    sysState.relay.currentState = false;
+    digitalWrite(Config::RELAY_PIN, LOW);
+
+    Serial.println("🔘 RELAY MANUAL MODE: DISABLED (killswitch)");
   }
 }

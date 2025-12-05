@@ -10,9 +10,14 @@ void startRelayFlashing();
 void setRelaySolid();
 void turnOffRelay();
 String getRelayStatus();
+void toggleRelayManualMode();
+void disableRelayManualMode();
 
 // Forward declaration for Killswitch Feedback
 void performKillswitchFeedback();
+
+// Forward declaration for Time Manager
+bool isInAlarmWindow();
 
 /**
  * Enhanced alarm sequence management
@@ -86,6 +91,7 @@ void handleButtonStates() {
       sysState.alarm.triggered = false;
       sysState.alarm.snoozeActive = false;
       sysState.alarm.stage = AlarmStage::INACTIVE;
+      sysState.alarm.isTestAlarm = false;  // Reset test alarm flag
       broadcastAlarmState();
       return;
     }
@@ -106,30 +112,71 @@ void handleButtonStates() {
     setAlarmsEnabled(true);
     stopAllMotors();
     sysState.alarm.triggered = true;
+    sysState.alarm.isTestAlarm = true;  // Mark as test alarm
     transitionAlarmStage(AlarmStage::PWM_WARNING);
     broadcastAlarmState();
-    
+
     Serial.println("Test sequence: Stepped PWM Warning → Pause → Dynamic Progressive Pattern");
   }
 
   if (snoozeButton.isPressed() || snoozeButton2.isPressed()) {
     String buttonPressed = snoozeButton.isPressed() ? "Primary (GPIO 18)" : "Secondary (GPIO 32)";
-    Serial.print("😴 SNOOZE BUTTON (");
-    Serial.print(buttonPressed);
-    Serial.print("): Instant dual motor stop + ");
-    Serial.print(rtConfig.snoozeDuration / 1000);
-    Serial.println("s timer");
-    
-    stopAllMotors();
-    sysState.alarm.stage = AlarmStage::INACTIVE;
-    sysState.alarm.snoozeActive = true;
-    sysState.alarm.snoozeStartTime = millis();
-    
-    setRelaySolid();  // Set relay to solid ON during snooze
-    
-    broadcastAlarmState();
-    
-    Serial.println("All motor activity halted - snooze timer started");
+
+    // If alarm is triggered, perform snooze function
+    if (sysState.alarm.triggered) {
+      Serial.print("😴 SNOOZE BUTTON (");
+      Serial.print(buttonPressed);
+      Serial.print("): Instant dual motor stop + ");
+      Serial.print(rtConfig.snoozeDuration / 1000);
+      Serial.println("s timer");
+
+      stopAllMotors();
+      sysState.alarm.stage = AlarmStage::INACTIVE;
+      sysState.alarm.snoozeActive = true;
+      sysState.alarm.snoozeStartTime = millis();
+
+      // Conditional relay behavior: OFF outside alarm window, ON within alarm window
+      if (isInAlarmWindow()) {
+        setRelaySolid();  // Within alarm window: keep relay ON
+        Serial.println("💡 RELAY: SOLID ON (within scheduled alarm window)");
+      } else {
+        turnOffRelay();  // Outside alarm window: turn relay OFF
+        Serial.println("🔌 RELAY: OFF (outside scheduled alarm window)");
+      }
+
+      broadcastAlarmState();
+      Serial.println("All motor activity halted - snooze timer started");
+    }
+    // If alarm NOT triggered and OUTSIDE alarm window, check for triple-press to toggle relay
+    else if (!isInAlarmWindow()) {
+      // Record this press in circular buffer
+      unsigned long currentTime = millis();
+      sysState.triplePress.pressTimes[sysState.triplePress.pressIndex] = currentTime;
+      sysState.triplePress.pressIndex = (sysState.triplePress.pressIndex + 1) % 3;
+
+      // Check if all 3 presses happened within 2 seconds
+      unsigned long oldestPress = sysState.triplePress.pressTimes[0];
+      unsigned long middlePress = sysState.triplePress.pressTimes[1];
+      unsigned long newestPress = sysState.triplePress.pressTimes[2];
+
+      // Find the actual oldest and newest times
+      unsigned long minTime = min(oldestPress, min(middlePress, newestPress));
+      unsigned long maxTime = max(oldestPress, max(middlePress, newestPress));
+
+      // All three times must be non-zero and within 2000ms window
+      if (oldestPress > 0 && middlePress > 0 && newestPress > 0) {
+        if ((maxTime - minTime) <= 2000) {
+          Serial.println("🔄 TRIPLE PRESS DETECTED: Toggling relay manual mode");
+          toggleRelayManualMode();
+
+          // Reset triple press buffer
+          sysState.triplePress.pressTimes[0] = 0;
+          sysState.triplePress.pressTimes[1] = 0;
+          sysState.triplePress.pressTimes[2] = 0;
+          sysState.triplePress.pressIndex = 0;
+        }
+      }
+    }
   }
 
   if (killSwitch.isPressed()) {
@@ -143,7 +190,9 @@ void handleButtonStates() {
     sysState.alarm.triggered = false;
     sysState.alarm.snoozeActive = false;
     sysState.alarm.stage = AlarmStage::INACTIVE;
+    sysState.alarm.isTestAlarm = false;  // Reset test alarm flag
 
+    disableRelayManualMode();  // Disable manual relay mode if active
     turnOffRelay();  // Turn off relay completely
 
     broadcastAlarmState();
@@ -255,6 +304,7 @@ void handleLongPressAction(int buttonIndex) {
       sysState.alarm.triggered = false;
       sysState.alarm.snoozeActive = false;
       sysState.alarm.stage = AlarmStage::INACTIVE;
+      disableRelayManualMode();  // Disable manual relay mode if active
       turnOffRelay();
       broadcastAlarmState();
       Serial.println("System completely shut down - all alarms disabled");
@@ -272,6 +322,7 @@ void handleLongPressAction(int buttonIndex) {
       sysState.alarm.triggered = false;
       sysState.alarm.snoozeActive = false;
       sysState.alarm.stage = AlarmStage::INACTIVE;
+      disableRelayManualMode();  // Disable manual relay mode if active
       turnOffRelay();
       broadcastAlarmState();
       Serial.println("System completely shut down - all alarms disabled");
@@ -432,11 +483,12 @@ void checkAndTriggerAlarms() {
   if (shouldTriggerAlarm()) {
     Serial.println("🚨 ALARM TRIGGER: Starting complete alarm sequence");
     Serial.println("Sequence: Stepped PWM Warning → Pause → Dynamic Progressive Pattern");
-    
+
     sysState.alarm.triggered = true;
+    sysState.alarm.isTestAlarm = false;  // Mark as scheduled alarm
     transitionAlarmStage(AlarmStage::PWM_WARNING);
     broadcastAlarmState();
-    
+
     Serial.print("Auto-triggered at: ");
     Serial.println(getFormattedTime());
   }
@@ -567,24 +619,30 @@ void transitionAlarmStage(AlarmStage newStage) {
     Serial.print(" → ");
     Serial.println((int)newStage);
   }
-  
+
   sysState.alarm.stage = newStage;
   sysState.alarm.stageStartTime = millis();
-  
+
+  // Disable manual relay mode when alarm becomes active (alarm takes priority)
+  if (newStage == AlarmStage::PWM_WARNING && sysState.relay.manualMode) {
+    sysState.relay.manualMode = false;
+    Serial.println("🔘 RELAY MANUAL MODE: Auto-disabled (alarm override)");
+  }
+
   // Control relay based on alarm stage
   switch (newStage) {
     case AlarmStage::INACTIVE:
       turnOffRelay();
       break;
-      
+
     case AlarmStage::PWM_WARNING:
       startRelayFlashing();
       break;
-      
+
     case AlarmStage::PAUSE:
       turnOffRelay();  // Solid OFF during pause
       break;
-      
+
     case AlarmStage::PROGRESSIVE_PATTERN:
       startRelayFlashing();
       break;
