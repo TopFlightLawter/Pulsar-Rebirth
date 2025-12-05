@@ -1,5 +1,5 @@
 // ======================================================================================
-// WEB SERVER FUNCTIONS - Pulsar Rebirth v5.4
+// WEB SERVER FUNCTIONS - Pulsar Rebirth v5.6
 // ======================================================================================
 
 void sendCORSResponse(int code, const String& contentType, const String& content) {
@@ -38,6 +38,8 @@ void setupWebServer() {
   server.on("/telemetry", HTTP_GET, handleTelemetry);
   server.on("/systemHealth", HTTP_GET, handleSystemHealth);
   server.on("/api/relay", HTTP_GET, handleRelayControl);
+  server.on("/api/config/export", HTTP_GET, handleConfigExport);
+  server.on("/api/config/import", HTTP_POST, handleConfigImport);
 
   server.on("*", HTTP_OPTIONS, []() {
     sendCORSResponse(204, "", "");
@@ -342,7 +344,51 @@ void handleRelayControl() {
 }
 
 /**
- * PULSAR COMMAND CENTER - Professional Interface v5.2
+ * Handle configuration export
+ * Returns JSON file for download
+ */
+void handleConfigExport() {
+  String json = generateConfigJSON();
+
+  // Set headers for file download
+  server.sendHeader("Content-Disposition", "attachment; filename=pulsar_config_backup.json");
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", json);
+
+  Serial.println("📤 Configuration exported via HTTP");
+}
+
+/**
+ * Handle configuration import
+ * Accepts JSON POST and applies settings
+ */
+void handleConfigImport() {
+  if (server.hasArg("plain")) {
+    String jsonBody = server.arg("plain");
+
+    Serial.println("📥 Received configuration import request");
+
+    bool success = importConfigFromJSON(jsonBody);
+
+    if (success) {
+      String response = "{\"success\": true, \"message\": \"Configuration imported and saved successfully\"}";
+      sendCORSResponse(200, "application/json", response);
+
+      // Broadcast updated config to all WebSocket clients
+      broadcastAlarmState();
+      broadcastMotorState();
+    } else {
+      String response = "{\"success\": false, \"message\": \"Failed to import configuration - invalid JSON format\"}";
+      sendCORSResponse(400, "application/json", response);
+    }
+  } else {
+    String response = "{\"success\": false, \"message\": \"No JSON data received\"}";
+    sendCORSResponse(400, "application/json", response);
+  }
+}
+
+/**
+ * PULSAR COMMAND CENTER - Professional Interface v5.6
  */
 void handleCommandCenter() {
   String html = R"rawliteral(
@@ -899,6 +945,9 @@ void handleCommandCenter() {
                 
                 <!-- ACTION BUTTONS -->
                 <button class="btn btn-save" onclick="saveToDevice()">SAVE TO DEVICE</button>
+                <button class="btn btn-save" onclick="exportConfig()">📥 EXPORT CONFIG</button>
+                <button class="btn btn-save" onclick="document.getElementById('importFile').click()">📤 IMPORT CONFIG</button>
+                <input type="file" id="importFile" accept=".json" style="display:none" onchange="importConfig(this)" />
                 <button class="btn btn-lightswitch" id="lightswitchBtn" onclick="toggleLightswitch()">
                     💡 LAMP OFF
                 </button>
@@ -1368,6 +1417,84 @@ void handleCommandCenter() {
             document.getElementById('clockDate').textContent = dateStr;
         }
         
+        function exportConfig() {
+            fetch('/api/config/export')
+                .then(response => response.blob())
+                .then(blob => {
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+
+                    // Generate filename with timestamp
+                    const now = new Date();
+                    const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                    a.download = `pulsar_config_${timestamp}.json`;
+
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+
+                    console.log('Configuration exported successfully');
+                })
+                .catch(error => {
+                    console.error('Error exporting configuration:', error);
+                    alert('Failed to export configuration');
+                });
+        }
+
+        function importConfig(input) {
+            const file = input.files[0];
+            if (!file) {
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const jsonContent = e.target.result;
+
+                // Confirm before importing
+                if (!confirm('This will overwrite your current configuration. Continue?')) {
+                    input.value = ''; // Reset file input
+                    return;
+                }
+
+                fetch('/api/config/import', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: jsonContent
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Configuration imported successfully! Refreshing page...');
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1000);
+                    } else {
+                        alert('Failed to import configuration: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error importing configuration:', error);
+                    alert('Failed to import configuration');
+                })
+                .finally(() => {
+                    input.value = ''; // Reset file input
+                });
+            };
+
+            reader.onerror = function() {
+                alert('Failed to read file');
+                input.value = ''; // Reset file input
+            };
+
+            reader.readAsText(file);
+        }
+
         connectWebSocket();
         updateClock();
         checkRelayStatus();
@@ -1377,6 +1504,6 @@ void handleCommandCenter() {
 </body>
 </html>
 )rawliteral";
-  
+
   sendCORSResponse(200, "text/html", html);
 }

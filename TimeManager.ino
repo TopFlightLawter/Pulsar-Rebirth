@@ -1,5 +1,5 @@
 // ======================================================================================
-// TIME MANAGEMENT FUNCTIONS - Pulsar Rebirth v5.4
+// TIME MANAGEMENT FUNCTIONS - Pulsar Rebirth v5.6
 // ======================================================================================
 
 void synchronizeTime() {

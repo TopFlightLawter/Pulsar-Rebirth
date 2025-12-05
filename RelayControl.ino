@@ -1,5 +1,5 @@
 // ======================================================================================
-// RELAY CONTROL SYSTEM - Pulsar Rebirth v5.4
+// RELAY CONTROL SYSTEM - Pulsar Rebirth v5.6
 // ======================================================================================
 // Controls ULN2003AN Channel 3 for external relay module
 // Behavior:

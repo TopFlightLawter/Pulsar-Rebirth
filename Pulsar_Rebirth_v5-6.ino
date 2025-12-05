@@ -1,5 +1,5 @@
 // ======================================================================================
-// PULSAR REBIRTH v5.4 - Main Sketch
+// PULSAR REBIRTH v5.6 - Main Sketch
 // ======================================================================================
 
 #include <WiFi.h>
@@ -136,6 +136,9 @@ void broadcastMotorState();
 void broadcastAlarmState();
 void saveRuntimeConfig();
 void loadRuntimeConfig();
+void exportConfigToSerial();
+String generateConfigJSON();
+bool importConfigFromJSON(const String& jsonStr);
 
 // WiFi Manager
 bool connectToNetwork(const char* ssid, const char* password, int maxAttempts);
@@ -216,7 +219,7 @@ void setup() {
   Serial.begin(9600);
   delay(300);
 
-  Serial.println("\n\n=== PULSAR REBIRTH v5.2 ===");
+  Serial.println("\n\n=== PULSAR REBIRTH v5.6 ===");
   Serial.print("Version: ");
   Serial.println(Config::FIRMWARE_VERSION);
   Serial.println(Config::SYSTEM_DESCRIPTION);
@@ -332,6 +335,33 @@ void setup() {
 }
 
 // ======================================================================================
+// SERIAL COMMAND HANDLER
+// ======================================================================================
+void handleSerialCommands() {
+  if (Serial.available() > 0) {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+    command.toLowerCase();
+
+    if (command == "export" || command == "export config") {
+      Serial.println("\n=== EXPORTING CONFIGURATION ===");
+      exportConfigToSerial();
+      Serial.println("=== EXPORT COMPLETE ===\n");
+    }
+    else if (command == "help" || command == "?") {
+      Serial.println("\n=== AVAILABLE SERIAL COMMANDS ===");
+      Serial.println("export       - Export all configuration as JSON");
+      Serial.println("status       - Show system status");
+      Serial.println("help         - Show this help message");
+      Serial.println("==================================\n");
+    }
+    else if (command == "status") {
+      printSystemStatus();
+    }
+  }
+}
+
+// ======================================================================================
 // MAIN LOOP
 // ======================================================================================
 void loop() {
@@ -342,6 +372,8 @@ void loop() {
   }
 
   updateTelemetry();
+
+  handleSerialCommands();
 
   handleButtonStates();
   handleLongPress();

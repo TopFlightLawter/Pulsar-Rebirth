@@ -1,5 +1,5 @@
 // ======================================================================================
-// MOTOR CONTROL SYSTEM - Pulsar Rebirth v5.4
+// MOTOR CONTROL SYSTEM - Pulsar Rebirth v5.6
 // ======================================================================================
 // Synchronized dual motor operation with runtime-configurable patterns via WebSocket
 

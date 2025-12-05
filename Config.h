@@ -1,5 +1,5 @@
 // ======================================================================================
-// CONFIGURATION HEADER - Pulsar Rebirth v5.4
+// CONFIGURATION HEADER - Pulsar Rebirth v5.6
 // ======================================================================================
 // WebSocket server for real-time tuning via Pulsar Command Center
 // Runtime-configurable parameters with flash persistence
@@ -135,7 +135,7 @@ namespace Config {
   // VERSION AND BUILD INFORMATION
   // ======================================================================================
 
-  const char* FIRMWARE_VERSION = "Rebirth 5.4";
+  const char* FIRMWARE_VERSION = "Rebirth 5.6";
   const char* BUILD_DATE = __DATE__;
   const char* BUILD_TIME = __TIME__;
   const char* SYSTEM_NAME = "Pulsar Rebirth";
@@ -158,14 +158,13 @@ namespace Config {
 struct RuntimeConfig {
   // === PWM WARNING PATTERN ===
   unsigned long pwmWarningDuration = 7500;
-  int pwmWarningStepCount = 31;
+  int pwmWarningStepCount = 40;
   unsigned long warningPauseDuration = 3000;
   
   // === PWM WARNING STEPS ARRAY - YOUR CUSTOM PATTERN ===
   int pwmStepsArray[Config::MAX_PWM_STEPS] = {
-    0, 7, 6, 6, 6, 6, 6, 5, 5, 5, 5, 5, 0, 7, 6, 6, 6, 6, 6, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 7, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0  // Padding to MAX_PWM_STEPS
-  };
+  5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 7, 7, 8,   0
+    };
   int pwmStepsArrayLength = 31;
   
   // === PROGRESSIVE ALARM PATTERN - YOUR CUSTOM SETTINGS ===
@@ -177,10 +176,10 @@ struct RuntimeConfig {
   // === MOTOR PATTERN ===
   int motorPattern[Config::MAX_MOTOR_PATTERN] = {
     100, 900, 87, 750, 150, 800, 105, 700, 130, 400, 100, 800, 100, 650, 100, 790, 80,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // Padding
+    100, 100, 100, 100, 100, 100, 100, 100, 300, 100, 500, 100, 200, 100, 400, 100, 0, 0, 0, 0, 0, 0, 0  // Padding
   };
-  int motorPatternLength = 17;
-  int motor2OffsetMs = 23;
+  int motorPatternLength = 35;
+  int motor2OffsetMs = 21;
   
   // === ALARM WINDOW ===
   int alarmStartHour = 21;
@@ -194,8 +193,8 @@ struct RuntimeConfig {
   unsigned long snoozeDuration = 60000;
   
   // === RELAY FLASH TIMING ===
-  unsigned long warningFlashInterval = 750;  // PWM Warning stage flash speed (50-1000ms)
-  unsigned long alarmFlashInterval = 150;     // Progressive Pattern stage flash speed (50-1000ms)
+  unsigned long warningFlashInterval = 400;  // PWM Warning stage flash speed (50-1000ms)
+  unsigned long alarmFlashInterval = 200;     // Progressive Pattern stage flash speed (50-1000ms)
   
   // Helper to calculate step duration
   unsigned long getPwmStepDuration() const {

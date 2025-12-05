@@ -1,5 +1,5 @@
 // ======================================================================================
-// WIFI MANAGER - Pulsar Rebirth v5.4
+// WIFI MANAGER - Pulsar Rebirth v5.6
 // ======================================================================================
 
 bool connectToNetwork(const char* ssid, const char* password, int maxAttempts) {

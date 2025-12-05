@@ -1,5 +1,5 @@
 // ======================================================================================
-// WEBSOCKET SERVER - Pulsar Rebirth v5.4
+// WEBSOCKET SERVER - Pulsar Rebirth v5.6
 // ======================================================================================
 // Real-time bidirectional communication for Pulsar Command Center tuning interface
 // Handles configuration updates, state broadcasting, and test commands
@@ -631,4 +631,207 @@ void loadRuntimeConfig() {
   Serial.print("   Motor2 Offset: ");
   Serial.print(rtConfig.motor2OffsetMs);
   Serial.println("ms");
+}
+
+// ======================================================================================
+// CONFIGURATION EXPORT/IMPORT SYSTEM
+// ======================================================================================
+
+/**
+ * Generate complete configuration as JSON string
+ * Includes all runtime parameters, arrays, and metadata
+ */
+String generateConfigJSON() {
+  StaticJsonDocument<4096> doc;
+
+  // Metadata
+  doc["version"] = Config::FIRMWARE_VERSION;
+  doc["exportDate"] = getFormattedTime();
+  doc["systemName"] = Config::SYSTEM_NAME;
+
+  // Configuration object
+  JsonObject config = doc.createNestedObject("config");
+
+  // PWM Warning
+  config["PWM_WARNING_DURATION"] = rtConfig.pwmWarningDuration;
+  config["PWM_WARNING_STEPS"] = rtConfig.pwmWarningStepCount;
+  config["WARNING_PAUSE_DURATION"] = rtConfig.warningPauseDuration;
+
+  // Progressive Pattern
+  config["MAIN_STARTING_INTENSITY"] = rtConfig.mainStartingIntensity;
+  config["MAIN_INTENSITY_INCREMENT"] = rtConfig.mainIntensityIncrement;
+  config["MAIN_MAX_INTENSITY"] = rtConfig.mainMaxIntensity;
+  config["MAIN_FIRES_PER_INTENSITY"] = rtConfig.mainFiresPerIntensity;
+
+  // Motor Pattern
+  config["MOTOR2_OFFSET_MS"] = rtConfig.motor2OffsetMs;
+  config["MOTOR_PATTERN_LENGTH"] = rtConfig.motorPatternLength;
+
+  // Alarm Window
+  config["ALARM_START_HOUR"] = rtConfig.alarmStartHour;
+  config["ALARM_START_MINUTE"] = rtConfig.alarmStartMinute;
+  config["ALARM_END_HOUR"] = rtConfig.alarmEndHour;
+  config["ALARM_END_MINUTE"] = rtConfig.alarmEndMinute;
+  config["ALARM_INTERVAL_MINUTES"] = rtConfig.alarmIntervalMinutes;
+  config["ALARM_TRIGGER_SECOND"] = rtConfig.alarmTriggerSecond;
+
+  // Snooze
+  config["SNOOZE_DURATION"] = rtConfig.snoozeDuration;
+
+  // Relay Flash Timing
+  config["WARNING_FLASH_INTERVAL"] = rtConfig.warningFlashInterval;
+  config["ALARM_FLASH_INTERVAL"] = rtConfig.alarmFlashInterval;
+
+  // PWM Steps Array
+  JsonArray pwmArray = config.createNestedArray("PWM_STEPS_ARRAY");
+  for (int i = 0; i < rtConfig.pwmStepsArrayLength; i++) {
+    pwmArray.add(rtConfig.pwmStepsArray[i]);
+  }
+  config["PWM_STEPS_ARRAY_LENGTH"] = rtConfig.pwmStepsArrayLength;
+
+  // Motor Pattern Array
+  JsonArray motorArray = config.createNestedArray("MOTOR_PATTERN");
+  for (int i = 0; i < rtConfig.motorPatternLength; i++) {
+    motorArray.add(rtConfig.motorPattern[i]);
+  }
+
+  String output;
+  serializeJsonPretty(doc, output);
+  return output;
+}
+
+/**
+ * Export configuration to Serial Monitor
+ * Formatted for easy copy/paste backup
+ */
+void exportConfigToSerial() {
+  String json = generateConfigJSON();
+
+  Serial.println("Copy the JSON below and save it to a file:");
+  Serial.println("────────────────────────────────────────");
+  Serial.println(json);
+  Serial.println("────────────────────────────────────────");
+  Serial.println("To restore: use the Import feature in Pulsar Command Center");
+  Serial.println("or POST this JSON to http://pulsar.local/api/config/import");
+}
+
+/**
+ * Import configuration from JSON string
+ * Validates and applies all settings, then saves to flash
+ */
+bool importConfigFromJSON(const String& jsonStr) {
+  StaticJsonDocument<4096> doc;
+  DeserializationError error = deserializeJson(doc, jsonStr);
+
+  if (error) {
+    Serial.print("❌ JSON parse error during import: ");
+    Serial.println(error.c_str());
+    return false;
+  }
+
+  // Check version compatibility (optional - just log it)
+  if (doc.containsKey("version")) {
+    Serial.print("Importing config from firmware version: ");
+    Serial.println(doc["version"].as<const char*>());
+  }
+
+  JsonObject config = doc["config"];
+  if (!config) {
+    Serial.println("❌ Invalid config format - missing 'config' object");
+    return false;
+  }
+
+  // Apply all configuration values
+  Serial.println("📥 Importing configuration...");
+
+  // PWM Warning
+  if (config.containsKey("PWM_WARNING_DURATION"))
+    rtConfig.pwmWarningDuration = config["PWM_WARNING_DURATION"];
+  if (config.containsKey("PWM_WARNING_STEPS"))
+    rtConfig.pwmWarningStepCount = config["PWM_WARNING_STEPS"];
+  if (config.containsKey("WARNING_PAUSE_DURATION"))
+    rtConfig.warningPauseDuration = config["WARNING_PAUSE_DURATION"];
+
+  // Progressive Pattern
+  if (config.containsKey("MAIN_STARTING_INTENSITY"))
+    rtConfig.mainStartingIntensity = config["MAIN_STARTING_INTENSITY"];
+  if (config.containsKey("MAIN_INTENSITY_INCREMENT"))
+    rtConfig.mainIntensityIncrement = config["MAIN_INTENSITY_INCREMENT"];
+  if (config.containsKey("MAIN_MAX_INTENSITY"))
+    rtConfig.mainMaxIntensity = config["MAIN_MAX_INTENSITY"];
+  if (config.containsKey("MAIN_FIRES_PER_INTENSITY"))
+    rtConfig.mainFiresPerIntensity = config["MAIN_FIRES_PER_INTENSITY"];
+
+  // Motor Pattern
+  if (config.containsKey("MOTOR2_OFFSET_MS"))
+    rtConfig.motor2OffsetMs = config["MOTOR2_OFFSET_MS"];
+
+  // Alarm Window
+  if (config.containsKey("ALARM_START_HOUR"))
+    rtConfig.alarmStartHour = config["ALARM_START_HOUR"];
+  if (config.containsKey("ALARM_START_MINUTE"))
+    rtConfig.alarmStartMinute = config["ALARM_START_MINUTE"];
+  if (config.containsKey("ALARM_END_HOUR"))
+    rtConfig.alarmEndHour = config["ALARM_END_HOUR"];
+  if (config.containsKey("ALARM_END_MINUTE"))
+    rtConfig.alarmEndMinute = config["ALARM_END_MINUTE"];
+  if (config.containsKey("ALARM_INTERVAL_MINUTES"))
+    rtConfig.alarmIntervalMinutes = config["ALARM_INTERVAL_MINUTES"];
+  if (config.containsKey("ALARM_TRIGGER_SECOND"))
+    rtConfig.alarmTriggerSecond = config["ALARM_TRIGGER_SECOND"];
+
+  // Snooze
+  if (config.containsKey("SNOOZE_DURATION"))
+    rtConfig.snoozeDuration = config["SNOOZE_DURATION"];
+
+  // Relay Flash Timing
+  if (config.containsKey("WARNING_FLASH_INTERVAL"))
+    rtConfig.warningFlashInterval = config["WARNING_FLASH_INTERVAL"];
+  if (config.containsKey("ALARM_FLASH_INTERVAL"))
+    rtConfig.alarmFlashInterval = config["ALARM_FLASH_INTERVAL"];
+
+  // PWM Steps Array
+  if (config.containsKey("PWM_STEPS_ARRAY")) {
+    JsonArray pwmArray = config["PWM_STEPS_ARRAY"];
+    int count = min((int)pwmArray.size(), Config::MAX_PWM_STEPS);
+    for (int i = 0; i < count; i++) {
+      rtConfig.pwmStepsArray[i] = pwmArray[i];
+    }
+    rtConfig.pwmStepsArrayLength = count;
+
+    // Sync with global array
+    extern int pwmWarningSteps[];
+    for (int i = 0; i < count; i++) {
+      pwmWarningSteps[i] = rtConfig.pwmStepsArray[i];
+    }
+  }
+
+  // Motor Pattern Array
+  if (config.containsKey("MOTOR_PATTERN")) {
+    JsonArray motorArray = config["MOTOR_PATTERN"];
+    int count = min((int)motorArray.size(), Config::MAX_MOTOR_PATTERN);
+    for (int i = 0; i < count; i++) {
+      rtConfig.motorPattern[i] = motorArray[i];
+    }
+    rtConfig.motorPatternLength = count;
+  }
+
+  // Save to flash immediately
+  saveRuntimeConfig();
+
+  Serial.println("✅ Configuration imported and saved successfully!");
+  Serial.print("   PWM Steps: ");
+  Serial.println(rtConfig.pwmStepsArrayLength);
+  Serial.print("   Motor Pattern Length: ");
+  Serial.println(rtConfig.motorPatternLength);
+  Serial.print("   Alarm Window: ");
+  Serial.print(rtConfig.alarmStartHour);
+  Serial.print(":");
+  Serial.print(rtConfig.alarmStartMinute);
+  Serial.print(" - ");
+  Serial.print(rtConfig.alarmEndHour);
+  Serial.print(":");
+  Serial.println(rtConfig.alarmEndMinute);
+
+  return true;
 }
