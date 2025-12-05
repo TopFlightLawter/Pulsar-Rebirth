@@ -13,6 +13,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Dual snooze buttons for redundancy
 - OTA firmware updates
 
+## What's New in v5.4
+
+**Enhanced User Feedback:**
+- **Killswitch Visual Feedback**: All killswitch actions now provide physical confirmation via relay flash + sequential motor pulses (100ms relay → 50ms Motor 1 → 50ms Motor 2)
+- **OLED Save Animation**: WebSocket config saves trigger a clockwise "energy ball" animation around the OLED border (2-pixel trail, ~1.92 seconds)
+
+**Improved Button Functionality:**
+- **20-Second Snooze Hold → Killswitch**: Both snooze buttons (GPIO 18 & 32) now trigger full system shutdown when held for 20 seconds (replaces the less useful 5-minute extended snooze)
+- Maintains normal 60-second snooze on short press
+
+**Bug Fixes:**
+- **Relay Flashing Fix**: Relay now properly flashes throughout entire PWM Warning stage (previously only flashed once then stayed off)
+
+**Security Improvements:**
+- WiFi credentials moved to separate `Config_credentials.h` file (gitignored)
+- Prevents accidental credential exposure on public repositories
+
 ## Build & Flash Commands
 
 **Platform:** Arduino IDE with ESP32 board support
@@ -47,7 +64,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The codebase uses Arduino's multi-tab system where all `.ino` files are automatically concatenated:
 
-1. **Pulsar_Rebirth_v5-2.ino** - Main entry point, setup(), loop(), global instances
+1. **Pulsar_Rebirth_v5-4.ino** - Main entry point, setup(), loop(), global instances
 2. **Config.h** - ALL configuration (pins, network, timing, runtime parameters)
 3. **AlarmLogic.ino** - Button handling, alarm triggering, stage transitions
 4. **MotorControl.ino** - PWM channels, dual motor state machines, patterns
@@ -138,10 +155,10 @@ Each stage transition updates relay behavior and motor patterns.
 - GPIO 17: Set Alarm Button (enable alarm system)
 
 **Long Press Actions:**
-- Set Button: Print detailed system status to Serial
-- Test Button: PWM warning test only (no progressive)
-- Snooze (either): Extended 5-minute snooze
-- Kill Switch: Factory reset (clears both alarm & tuning preferences)
+- Set Button (2s): Print detailed system status to Serial
+- Test Button (2s): PWM warning test only (no progressive)
+- Snooze (either, 20s): Triggers killswitch with visual feedback (v5.4+)
+- Kill Switch (2s): Factory reset (clears both alarm & tuning preferences)
 
 **Emergency Stop Logic:**
 During PWM warning, any critical button (snooze/kill) triggers instant motor shutdown with 10ms threshold.
@@ -226,6 +243,62 @@ Relay state updates automatically via `transitionAlarmStage()` in AlarmLogic.ino
 - Adjust rtConfig.motorPatternLength (max 40)
 - Pattern alternates ON/OFF: [ON_ms, OFF_ms, ON_ms, OFF_ms, ...]
 
+### Adding Visual Feedback Sequences (v5.4+)
+
+**Example: Killswitch Visual Feedback:**
+1. Create blocking sequence function in MotorControl.ino
+2. Use `digitalWrite()` for relay, `ledcWrite()` for motors
+3. Use `delay()` for precise timing (acceptable for user-initiated actions)
+4. Triple-redundant safety: ensure all outputs OFF at end
+5. Add Serial debug output for each step
+6. Call from action triggers (button handlers, WebSocket commands)
+
+**Pattern:**
+```cpp
+void performActionFeedback() {
+  Serial.println("🎯 FEEDBACK SEQUENCE STARTING");
+  digitalWrite(Config::RELAY_PIN, HIGH);
+  delay(100);
+  digitalWrite(Config::RELAY_PIN, LOW);
+  delay(50);
+  // ... motor pulses ...
+  // Ensure everything OFF
+  digitalWrite(Config::RELAY_PIN, LOW);
+  ledcWrite(Config::PWM_CHANNEL, 0);
+  ledcWrite(Config::PWM_CHANNEL2, 0);
+}
+```
+
+### Adding OLED Animations (v5.4+)
+
+**Example: Border Animation:**
+1. Create animation function in DisplayFunctions.ino
+2. Check `sysState.display.available` before proceeding
+3. Calculate perimeter path (top → right → bottom → left)
+4. Use `display.drawPixel()` for individual pixels
+5. Call `display.display()` to update screen
+6. Use short delays (5-10ms) for smooth animation
+7. Clear display and reset update timer when complete
+
+**Pattern:**
+```cpp
+void showCustomAnimation() {
+  if (!sysState.display.available) return;
+
+  for (int i = 0; i < totalSteps; i++) {
+    // Calculate x,y position
+    display.drawPixel(x, y, WHITE);
+    display.display();
+    delay(5);
+    display.drawPixel(x, y, BLACK);  // Clear trail
+  }
+
+  display.clearDisplay();
+  display.display();
+  sysState.display.lastUpdate = 0;  // Force refresh
+}
+```
+
 ### Debug Output Control
 
 Debug flags in Config.h namespace control Serial verbosity:
@@ -239,9 +312,28 @@ Debug flags in Config.h namespace control Serial verbosity:
 
 Set to `false` to reduce Serial noise in production.
 
+## Security & Credentials
+
+**WiFi Credentials Management (v5.4+):**
+- WiFi credentials are stored in `Config_credentials.h` (NOT in git)
+- `Config.h` includes `Config_credentials.h` for actual credentials
+- `.gitignore` prevents `Config_credentials.h` from being committed
+- **NEVER commit real WiFi passwords to the repository**
+
+**Setup for New Developers:**
+1. Create `Config_credentials.h` in project root
+2. Define your WiFi credentials:
+   ```cpp
+   const char* PRIMARY_SSID = "YourNetwork";
+   const char* PRIMARY_PASS = "YourPassword";
+   const char* SECONDARY_SSID = "YourBackup";
+   const char* SECONDARY_PASS = "YourBackupPassword";
+   ```
+3. File is automatically gitignored - safe to use real credentials locally
+
 ## Critical Constraints
 
-1. **Never modify WiFi credentials in code** - Update Config.h PRIMARY_SSID/PASS and SECONDARY_SSID/PASS
+1. **Never commit WiFi credentials** - Use Config_credentials.h (gitignored) for actual passwords
 2. **PWM channels initialized once** - Don't call `ledcSetup()` or `ledcAttachPin()` after setup
 3. **Array bounds protection** - Always constrain array access to MAX_PWM_STEPS (40) and MAX_MOTOR_PATTERN (40)
 4. **WebSocket JSON buffer** - StaticJsonDocument sized for 2048 bytes max in `sendFullConfig()`
