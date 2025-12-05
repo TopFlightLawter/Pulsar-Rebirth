@@ -1,0 +1,21 @@
+# Arduino/ESP32 Build Files
+*.bin
+*.elf
+*.hex
+*.map
+build/
+*.d
+*.o
+
+# IDE Files
+.vscode/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Credentials (DO NOT COMMIT WIFI PASSWORDS)
+# Note: Config.h contains WiFi credentials - be careful!
+
+# Claude Code local settings
+.claude/settings.local.json
